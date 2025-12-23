@@ -87,8 +87,8 @@ This project is an advanced **Stock Market Trend Prediction System** that levera
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/pulkitupadhay/Stock_Market-_trend_Prediction.git
-cd Stock_Market-_trend_Prediction
+git clone https://github.com/pulkitupadhay/Stock-Market-Prediction.git
+cd Stock-Market-Prediction
 ```
 
 ### Step 2: Install Python Dependencies
@@ -182,7 +182,7 @@ Open your browser and navigate to: **http://localhost:3000**
 ## 📁 Project Structure
 
 ```
-Stock_Market-_trend_Prediction/
+Stock-Market-Prediction/
 ├── README.md                    # Project documentation
 ├── config.py                    # Stock configuration
 ├── requirements.txt             # Python dependencies
