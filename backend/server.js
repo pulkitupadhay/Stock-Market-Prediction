@@ -127,6 +127,30 @@ app.get('/api/predict/:symbol', async (req, res) => {
     }
 });
 
+app.get('/api/risk/:symbol', async (req, res) => {
+    const { symbol } = req.params;
+    console.log(`GET /api/risk/${symbol}`);
+
+    try {
+        const result = await callPythonService('risk', symbol);
+
+        if (result.error) {
+            return res.status(500).json({
+                success: false,
+                error: result.error
+            });
+        }
+
+        res.json(result);
+    } catch (err) {
+        console.error('Error calculating risk:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
+
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',

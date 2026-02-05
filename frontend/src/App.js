@@ -20,6 +20,13 @@ function App() {
   const [autoRefresh, setAutoRefresh] = useState(false); // Auto-refresh toggle
   const [refreshInterval, setRefreshInterval] = useState(30); // Refresh interval in seconds
 
+  // Risk analysis state
+  const [allRiskData, setAllRiskData] = useState([]);
+  const [loadingRisk, setLoadingRisk] = useState(false);
+  const [selectedRiskStock, setSelectedRiskStock] = useState('');
+  const [riskSortBy, setRiskSortBy] = useState('risk_score'); // 'risk_score', 'volatility', 'name'
+  const [riskSortOrder, setRiskSortOrder] = useState('desc');
+
   // Fetch available stocks
   useEffect(() => {
     console.log('Fetching stocks list...');
@@ -250,6 +257,45 @@ function App() {
         ? prev.filter(s => s !== symbol)
         : [...prev, symbol]
     );
+  };
+
+  // Load risk analysis data for all stocks
+  const loadRiskData = async () => {
+    setLoadingRisk(true);
+
+    try {
+      // Fetch risk analysis for all stocks in parallel
+      const promises = stocks.map(async (stock) => {
+        try {
+          const response = await fetch(`/api/risk/${stock.symbol}`);
+          const data = await response.json();
+
+          if (data.success && data.risk_analysis) {
+            return {
+              symbol: stock.symbol,
+              name: stock.name,
+              ...data.risk_analysis
+            };
+          }
+          return null;
+        } catch (err) {
+          console.error(`Error loading risk for ${stock.symbol}:`, err);
+          return null;
+        }
+      });
+
+      // Wait for all promises to complete
+      const results = await Promise.all(promises);
+
+      // Filter out null results
+      const data = results.filter(item => item !== null);
+
+      setAllRiskData(data);
+    } catch (err) {
+      console.error('Error loading risk data:', err);
+    } finally {
+      setLoadingRisk(false);
+    }
   };
 
   // Render different pages based on currentPage
@@ -697,27 +743,174 @@ function App() {
   };
 
   // RISK ANALYSIS PAGE
-  const renderRiskPage = () => (
-    <div className="page-container">
-      <h2 className="page-title">⚠️ Risk Analysis Dashboard</h2>
-      <p className="page-subtitle">AI-powered risk assessment for your investments</p>
+  const renderRiskPage = () => {
+    // Sort risk data
+    const sortedRiskData = [...allRiskData].sort((a, b) => {
+      let aVal, bVal;
 
-      <div className="container">
-        <div className="card" style={{textAlign: 'center', padding: '80px 40px'}}>
-          <div style={{fontSize: '5em', marginBottom: '20px'}}>🚧</div>
-          <h2 style={{fontSize: '2.5em', marginBottom: '15px', color: 'var(--accent-yellow)'}}>
-            Still in Progress
-          </h2>
-          <p style={{fontSize: '1.3em', color: 'var(--text-secondary)', marginBottom: '20px'}}>
-            This feature is currently under development
-          </p>
-          <p style={{fontSize: '1.1em', color: 'var(--text-muted)'}}>
-            Risk analysis dashboard will be available soon!
-          </p>
+      switch(riskSortBy) {
+        case 'risk_score':
+          aVal = a.risk_score;
+          bVal = b.risk_score;
+          break;
+        case 'volatility':
+          aVal = a.metrics.volatility;
+          bVal = b.metrics.volatility;
+          break;
+        case 'name':
+          aVal = a.name;
+          bVal = b.name;
+          break;
+        default:
+          aVal = a.risk_score;
+          bVal = b.risk_score;
+      }
+
+      if (typeof aVal === 'string') {
+        return riskSortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+
+      return riskSortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+
+    return (
+      <div className="page-container">
+        <h2 className="page-title">⚠️ Risk Analysis Dashboard</h2>
+        <p className="page-subtitle">AI-powered risk assessment for your investments</p>
+
+        <div className="container">
+          {/* Controls */}
+          <div className="card comparison-controls">
+            <div className="controls-row">
+              <button
+                className="load-button"
+                onClick={loadRiskData}
+                disabled={loadingRisk}
+              >
+                {loadingRisk ? '⏳ Analyzing...' : '🔄 Analyze All Stocks'}
+              </button>
+
+              <div className="sort-controls">
+                <label>Sort by:</label>
+                <select value={riskSortBy} onChange={(e) => setRiskSortBy(e.target.value)}>
+                  <option value="risk_score">Risk Score</option>
+                  <option value="volatility">Volatility</option>
+                  <option value="name">Name</option>
+                </select>
+
+                <button
+                  className="sort-order-button"
+                  onClick={() => setRiskSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                >
+                  {riskSortOrder === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Loading State */}
+          {loadingRisk && (
+            <div className="card" style={{textAlign: 'center', padding: '40px'}}>
+              <div className="loading">Analyzing risk for all stocks...</div>
+            </div>
+          )}
+
+          {/* Risk Analysis Grid */}
+          {!loadingRisk && sortedRiskData.length > 0 && (
+            <div className="risk-grid">
+              {sortedRiskData.map((stock) => (
+                <div key={stock.symbol} className="risk-card">
+                  {/* Header */}
+                  <div className="risk-card-header">
+                    <h3>{stock.name}</h3>
+                    <span className="risk-symbol">{stock.symbol}</span>
+                  </div>
+
+                  {/* Risk Score Gauge */}
+                  <div className="risk-gauge-container">
+                    <div className="risk-gauge">
+                      <div
+                        className="risk-gauge-fill"
+                        style={{
+                          width: `${stock.risk_score}%`,
+                          background: stock.risk_color
+                        }}
+                      ></div>
+                    </div>
+                    <div className="risk-score-label">
+                      <span className="risk-score" style={{color: stock.risk_color}}>
+                        {stock.risk_score}
+                      </span>
+                      <span className="risk-level" style={{color: stock.risk_color}}>
+                        {stock.risk_level} Risk
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Key Metrics */}
+                  <div className="risk-metrics">
+                    <div className="risk-metric">
+                      <span className="metric-label">Volatility</span>
+                      <span className="metric-value">{stock.metrics.volatility.toFixed(1)}%</span>
+                    </div>
+                    <div className="risk-metric">
+                      <span className="metric-label">Max Drawdown</span>
+                      <span className="metric-value">{stock.metrics.max_drawdown.toFixed(1)}%</span>
+                    </div>
+                    <div className="risk-metric">
+                      <span className="metric-label">VaR (95%)</span>
+                      <span className="metric-value">{stock.metrics.var_95.toFixed(2)}%</span>
+                    </div>
+                    <div className="risk-metric">
+                      <span className="metric-label">Sharpe Ratio</span>
+                      <span className="metric-value">{stock.metrics.sharpe_ratio.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* Risk Factors */}
+                  <div className="risk-factors">
+                    <h4>Risk Factors:</h4>
+                    {stock.risk_factors.slice(0, 2).map((factor, idx) => (
+                      <div key={idx} className={`risk-factor risk-factor-${factor.severity}`}>
+                        <span className="factor-icon">
+                          {factor.severity === 'high' ? '🔴' : factor.severity === 'medium' ? '🟡' : '🟢'}
+                        </span>
+                        <div className="factor-content">
+                          <strong>{factor.factor}</strong>
+                          <p>{factor.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Recommendations */}
+                  <div className="risk-recommendations">
+                    <h4>Recommendations:</h4>
+                    <ul>
+                      {stock.recommendations.slice(0, 2).map((rec, idx) => (
+                        <li key={idx}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loadingRisk && sortedRiskData.length === 0 && (
+            <div className="card" style={{textAlign: 'center', padding: '60px 40px'}}>
+              <div style={{fontSize: '4em', marginBottom: '20px'}}>📊</div>
+              <h3 style={{fontSize: '1.8em', marginBottom: '15px'}}>No Risk Data Yet</h3>
+              <p style={{fontSize: '1.2em', color: 'var(--text-secondary)', marginBottom: '25px'}}>
+                Click "Analyze All Stocks" to calculate risk metrics for all stocks
+              </p>
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="app">

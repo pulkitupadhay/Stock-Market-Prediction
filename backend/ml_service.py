@@ -154,6 +154,148 @@ def make_predictions(symbol):
     except Exception as e:
         return {'error': str(e)}
 
+def calculate_risk_analysis(symbol):
+    """Calculate comprehensive risk metrics for a stock"""
+    try:
+        # Load stock data
+        df = load_stock_data(symbol)
+
+        if df is None or len(df) < 30:
+            return {'error': 'Insufficient data for risk analysis'}
+
+        # Calculate daily returns
+        df['Returns'] = df['Close'].pct_change()
+
+        # 1. Volatility (Standard Deviation of Returns)
+        volatility = df['Returns'].std() * np.sqrt(252) * 100  # Annualized volatility
+
+        # 2. Maximum Drawdown
+        cumulative = (1 + df['Returns']).cumprod()
+        running_max = cumulative.cummax()
+        drawdown = (cumulative - running_max) / running_max
+        max_drawdown = drawdown.min() * 100
+
+        # 3. Value at Risk (VaR) - 95% confidence
+        var_95 = np.percentile(df['Returns'].dropna(), 5) * 100
+
+        # 4. Sharpe Ratio (assuming risk-free rate of 6%)
+        risk_free_rate = 0.06
+        excess_returns = df['Returns'].mean() * 252 - risk_free_rate
+        sharpe_ratio = excess_returns / (df['Returns'].std() * np.sqrt(252)) if df['Returns'].std() > 0 else 0
+
+        # 5. Price Volatility (30-day)
+        price_volatility = df['Close'].tail(30).std() / df['Close'].tail(30).mean() * 100
+
+        # 6. Volume Volatility
+        volume_volatility = df['Volume'].tail(30).std() / df['Volume'].tail(30).mean() * 100
+
+        # 7. Risk Score (0-100, higher = riskier)
+        # Weighted combination of metrics
+        volatility_score = min(volatility / 0.5, 100)  # Normalize to 100
+        drawdown_score = min(abs(max_drawdown) / 0.3, 100)
+        var_score = min(abs(var_95) / 0.05, 100)
+
+        risk_score = (volatility_score * 0.4 + drawdown_score * 0.3 + var_score * 0.3)
+
+        # 8. Risk Level
+        if risk_score < 30:
+            risk_level = 'Low'
+            risk_color = '#00ff88'
+        elif risk_score < 60:
+            risk_level = 'Medium'
+            risk_color = '#ffaa00'
+        else:
+            risk_level = 'High'
+            risk_color = '#ff4444'
+
+        # 9. Risk Factors
+        risk_factors = []
+
+        if volatility > 40:
+            risk_factors.append({
+                'factor': 'High Volatility',
+                'description': f'Annual volatility of {volatility:.1f}% indicates significant price swings',
+                'severity': 'high'
+            })
+        elif volatility > 25:
+            risk_factors.append({
+                'factor': 'Moderate Volatility',
+                'description': f'Annual volatility of {volatility:.1f}% shows moderate price fluctuations',
+                'severity': 'medium'
+            })
+
+        if abs(max_drawdown) > 20:
+            risk_factors.append({
+                'factor': 'Large Drawdown',
+                'description': f'Maximum drawdown of {abs(max_drawdown):.1f}% indicates potential for significant losses',
+                'severity': 'high'
+            })
+
+        if abs(var_95) > 3:
+            risk_factors.append({
+                'factor': 'High Daily Risk',
+                'description': f'95% VaR of {abs(var_95):.2f}% suggests high daily loss potential',
+                'severity': 'high'
+            })
+
+        if sharpe_ratio < 0.5:
+            risk_factors.append({
+                'factor': 'Poor Risk-Adjusted Returns',
+                'description': f'Sharpe ratio of {sharpe_ratio:.2f} indicates low returns relative to risk',
+                'severity': 'medium'
+            })
+
+        if len(risk_factors) == 0:
+            risk_factors.append({
+                'factor': 'Stable Performance',
+                'description': 'Stock shows relatively stable performance with manageable risk',
+                'severity': 'low'
+            })
+
+        # 10. Recommendations
+        recommendations = []
+
+        if risk_score < 30:
+            recommendations.append('Suitable for conservative investors')
+            recommendations.append('Good for long-term holdings')
+        elif risk_score < 60:
+            recommendations.append('Suitable for moderate risk tolerance')
+            recommendations.append('Consider diversification')
+        else:
+            recommendations.append('Only for high risk tolerance investors')
+            recommendations.append('Use stop-loss orders')
+            recommendations.append('Limit position size')
+
+        if sharpe_ratio > 1:
+            recommendations.append('Good risk-adjusted returns')
+
+        # Prepare result
+        result = {
+            'success': True,
+            'symbol': symbol,
+            'risk_analysis': {
+                'risk_score': round(risk_score, 2),
+                'risk_level': risk_level,
+                'risk_color': risk_color,
+                'metrics': {
+                    'volatility': round(volatility, 2),
+                    'max_drawdown': round(max_drawdown, 2),
+                    'var_95': round(var_95, 2),
+                    'sharpe_ratio': round(sharpe_ratio, 2),
+                    'price_volatility': round(price_volatility, 2),
+                    'volume_volatility': round(volume_volatility, 2)
+                },
+                'risk_factors': risk_factors,
+                'recommendations': recommendations,
+                'volatility_history': df['Returns'].tail(30).fillna(0).tolist()
+            }
+        }
+
+        return result
+
+    except Exception as e:
+        return {'error': str(e)}
+
 def get_stock_data(symbol):
     """Get current stock data"""
     try:
@@ -175,16 +317,18 @@ if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(json.dumps({'error': 'Usage: python ml_service.py <action> <symbol>'}))
         sys.exit(1)
-    
+
     action = sys.argv[1]
     symbol = sys.argv[2]
-    
+
     if action == 'predict':
         result = make_predictions(symbol)
     elif action == 'stock':
         result = get_stock_data(symbol)
+    elif action == 'risk':
+        result = calculate_risk_analysis(symbol)
     else:
         result = {'error': f'Unknown action: {action}'}
-    
+
     print(json.dumps(result))
 
